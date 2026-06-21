@@ -19,8 +19,8 @@ const CARDS_PER_SIDE = CARDS_PER_PAGE / 2;         // 9
 // Usuários disponíveis (expanda conforme necessário)
 const USERS = [
   { name: 'LUIZ',    emoji: '🔥' },
-  { name: 'JOGADOR2', emoji: '⚡' },
-  { name: 'JOGADOR3', emoji: '💧' },
+  { name: 'DANIEL', emoji: '⚡' },
+  { name: 'OTÁRIO', emoji: '💧' },
 ];
 
 // Ícones decorativos para os slots (rotacionam pelos slots)
