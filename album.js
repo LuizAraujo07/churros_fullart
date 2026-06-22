@@ -11,19 +11,48 @@
 // ─────────────────────────────────────────
 // CONFIGURAÇÕES
 // ─────────────────────────────────────────
-const TOTAL_CARDS  = 1800;
+const TOTAL_CARDS    = 1800;
 const CARDS_PER_PAGE = 18;
-const TOTAL_PAGES  = TOTAL_CARDS / CARDS_PER_PAGE; // 100
-const CARDS_PER_SIDE = CARDS_PER_PAGE / 2;         // 9
+const TOTAL_PAGES    = TOTAL_CARDS / CARDS_PER_PAGE; // 100
+const CARDS_PER_SIDE = CARDS_PER_PAGE / 2;           // 9
 
-// Usuários disponíveis (expanda conforme necessário)
+// ─────────────────────────────────────────
+// SUPABASE
+// ─────────────────────────────────────────
+const SUPABASE_URL = 'https://cjbnskeycuglwnwjzhrg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqYm5za2V5Y3VnbHdud2p6aHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNTkyMTQsImV4cCI6MjA5NzYzNTIxNH0.shVis3xsKbGSY3BmuRep8pQS78yoQmL6dp6L8JinfaE';
+
+/**
+ * Busca um Pokémon pelo número nacional na tabela pokedex.
+ * Retorna { national_number, gen, english_name } ou null se não encontrado.
+ */
+async function fetchPokemon(nationalNumber) {
+  const url = `${SUPABASE_URL}/rest/v1/pokedex`
+    + `?national_number=eq.${nationalNumber}`
+    + `&select=national_number,gen,english_name`
+    + `&limit=1`;
+
+  const res = await fetch(url, {
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+    }
+  });
+
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.length > 0 ? data[0] : null;
+}
+
+// ─────────────────────────────────────────
+// USUÁRIOS
+// ─────────────────────────────────────────
 const USERS = [
   { name: 'LUIZ',    emoji: '🔥' },
-  { name: 'DANIEL', emoji: '⚡' },
-  { name: 'OTÁRIO', emoji: '💧' },
+  { name: 'DANIEL',  emoji: '⚡' },
+  { name: 'OTÁRIO',  emoji: '💧' },
 ];
 
-// Ícones decorativos para os slots (rotacionam pelos slots)
 const SLOT_ICONS = ['⬡', '◈', '✦', '⬟', '◆', '⊕', '✧', '◉', '⬢'];
 
 // ─────────────────────────────────────────
@@ -35,42 +64,31 @@ let currentUser = USERS[0];
 // ─────────────────────────────────────────
 // REFERÊNCIAS DOM
 // ─────────────────────────────────────────
-const gridLeft        = document.getElementById('grid-left');
-const gridRight       = document.getElementById('grid-right');
-const labelLeft       = document.getElementById('label-left');
-const labelRight      = document.getElementById('label-right');
-const curPageEl       = document.getElementById('cur-page');
-const totalPagesEl    = document.getElementById('total-pages');
-const rangeStartEl    = document.getElementById('range-start');
-const rangeEndEl      = document.getElementById('range-end');
-const pageJumpEl      = document.getElementById('page-jump');
-const progressInner   = document.getElementById('progress-bar-inner');
-const progressPct     = document.getElementById('progress-pct');
-const currentUserEl   = document.getElementById('current-user');
-const userListEl      = document.getElementById('user-list');
+const gridLeft       = document.getElementById('grid-left');
+const gridRight      = document.getElementById('grid-right');
+const labelLeft      = document.getElementById('label-left');
+const labelRight     = document.getElementById('label-right');
+const curPageEl      = document.getElementById('cur-page');
+const totalPagesEl   = document.getElementById('total-pages');
+const rangeStartEl   = document.getElementById('range-start');
+const rangeEndEl     = document.getElementById('range-end');
+const pageJumpEl     = document.getElementById('page-jump');
+const progressInner  = document.getElementById('progress-bar-inner');
+const progressPct    = document.getElementById('progress-pct');
+const currentUserEl  = document.getElementById('current-user');
+const userListEl     = document.getElementById('user-list');
 
 // ─────────────────────────────────────────
 // RENDER DE PÁGINA
 // ─────────────────────────────────────────
 
-/**
- * Calcula o número global da primeira carta desta página.
- * Página 1 → carta 1; Página 2 → carta 19; etc.
- */
 function firstCardOfPage(page) {
   return (page - 1) * CARDS_PER_PAGE + 1;
 }
 
-/**
- * Cria (ou reutiliza) 9 slots em um grid e atribui os números corretos.
- * @param {HTMLElement} grid   — elemento #grid-left ou #grid-right
- * @param {number}      start  — número da primeira carta deste lado
- */
 function renderSide(grid, start) {
-  // Reaproveitamos os filhos existentes para evitar reflow desnecessário
   let slots = Array.from(grid.children);
 
-  // Cria slots faltantes (só acontece na primeira vez)
   while (slots.length < CARDS_PER_SIDE) {
     const slot = document.createElement('div');
     slot.className = 'card-slot';
@@ -78,7 +96,6 @@ function renderSide(grid, start) {
     slots.push(slot);
   }
 
-  // Atualiza os dados de cada slot
   for (let i = 0; i < CARDS_PER_SIDE; i++) {
     const cardNum = start + i;
     const slot    = slots[i];
@@ -90,38 +107,30 @@ function renderSide(grid, start) {
       <span class="card-badge">${cardNum}</span>
     `;
 
-    // Remove listener antigo e adiciona novo
     slot.onclick = null;
     slot.onclick = () => openCardModal(cardNum);
   }
 }
 
-/**
- * Atualiza toda a visualização do álbum para `page`.
- */
 function renderPage(page) {
   currentPage = Math.max(1, Math.min(page, TOTAL_PAGES));
 
-  const firstCard  = firstCardOfPage(currentPage);
-  const lastCard   = firstCard + CARDS_PER_PAGE - 1;
-  const midCard    = firstCard + CARDS_PER_SIDE; // início do lado B
+  const firstCard = firstCardOfPage(currentPage);
+  const lastCard  = firstCard + CARDS_PER_PAGE - 1;
+  const midCard   = firstCard + CARDS_PER_SIDE;
 
-  // Grades
   renderSide(gridLeft,  firstCard);
   renderSide(gridRight, midCard);
 
-  // Labels laterais
   labelLeft.textContent  = `LADO A  ·  #${String(firstCard).padStart(4,'0')} – #${String(midCard - 1).padStart(4,'0')}`;
   labelRight.textContent = `LADO B  ·  #${String(midCard).padStart(4,'0')} – #${String(lastCard).padStart(4,'0')}`;
 
-  // Indicadores de navegação
   curPageEl.textContent    = currentPage;
   totalPagesEl.textContent = TOTAL_PAGES;
   rangeStartEl.textContent = firstCard;
   rangeEndEl.textContent   = lastCard;
   pageJumpEl.value         = currentPage;
 
-  // Barra de progresso (baseada na página atual)
   const pct = Math.round((currentPage / TOTAL_PAGES) * 100);
   progressInner.style.width = pct + '%';
   progressPct.textContent   = pct + '%';
@@ -139,10 +148,49 @@ function closeModal(id) {
   document.getElementById(id).classList.remove('open');
 }
 
-function openCardModal(cardNum) {
+async function openCardModal(cardNum) {
+  // Atualiza título
   document.getElementById('card-modal-title').textContent =
     `CARTA  #${String(cardNum).padStart(4, '0')}`;
+
+  // Reseta o painel de info enquanto carrega
+  const infoEl = document.getElementById('card-pokemon-info');
+  infoEl.innerHTML = `
+    <div class="poke-loading">
+      <span class="poke-loading-dot"></span>
+      <span class="poke-loading-dot"></span>
+      <span class="poke-loading-dot"></span>
+    </div>
+  `;
+
   openModal('card-modal');
+
+  // Busca no Supabase
+  const pokemon = await fetchPokemon(cardNum);
+
+  if (pokemon) {
+    infoEl.innerHTML = `
+      <div class="poke-info-row">
+        <span class="poke-info-label">Nº</span>
+        <span class="poke-info-value poke-number">#${String(pokemon.national_number).padStart(4, '0')}</span>
+      </div>
+      <div class="poke-info-row">
+        <span class="poke-info-label">NOME</span>
+        <span class="poke-info-value poke-name">${pokemon.english_name}</span>
+      </div>
+      <div class="poke-info-row">
+        <span class="poke-info-label">GEN</span>
+        <span class="poke-info-value poke-gen">GEN ${pokemon.gen}</span>
+      </div>
+    `;
+  } else {
+    infoEl.innerHTML = `
+      <div class="poke-not-found">
+        <span>???</span>
+        <small>Pokémon não encontrado</small>
+      </div>
+    `;
+  }
 }
 
 // Fechar modal clicando no fundo
@@ -177,10 +225,9 @@ pageJumpEl.addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btn-go').click();
 });
 
-// Atalhos de teclado: setas esquerda/direita
 document.addEventListener('keydown', e => {
   const tag = document.activeElement.tagName;
-  if (tag === 'INPUT') return; // não interfere no campo de página
+  if (tag === 'INPUT') return;
   if (e.key === 'ArrowLeft')  document.getElementById('btn-prev').click();
   if (e.key === 'ArrowRight') document.getElementById('btn-next').click();
 });
@@ -203,7 +250,7 @@ function buildUserList() {
 function selectUser(idx) {
   currentUser = USERS[idx];
   currentUserEl.textContent = currentUser.name;
-  buildUserList(); // atualiza classe .active
+  buildUserList();
 }
 
 document.getElementById('btn-change-user').onclick = () => {
@@ -212,7 +259,7 @@ document.getElementById('btn-change-user').onclick = () => {
 };
 
 // ─────────────────────────────────────────
-// ESTRELAS DECORATIVAS (pixel art background)
+// ESTRELAS DECORATIVAS
 // ─────────────────────────────────────────
 
 function createStars() {
