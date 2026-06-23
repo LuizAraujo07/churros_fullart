@@ -39,8 +39,11 @@ async function fetchPokemon(nationalNumber) {
     }
   });
 
-  if (!res.ok) return null;
+  // DEBUG
+  console.log('Status HTTP:', res.status);
   const data = await res.json();
+  console.log('Resposta:', JSON.stringify(data, null, 2));
+
   return data.length > 0 ? data[0] : null;
 }
 
