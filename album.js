@@ -27,6 +27,8 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
  * Retorna { national_number, gen, english_name } ou null se não encontrado.
  */
 async function fetchPokemon(nationalNumber) {
+  console.log('Buscando Pokémon número:', nationalNumber);
+  
   const url = `${SUPABASE_URL}/rest/v1/pokedex`
     + `?national_number=eq.${parseInt(nationalNumber, 10)}`
     + `&select=national_number,gen,english_name`
