@@ -6,6 +6,7 @@
  *  - Cada página do site = 2 metades (lado A: cartas 1-9, lado B: cartas 10-18)
  *  - As divs/slots são criadas dinamicamente: apenas 18 elementos por vez no DOM
  *  - Ao mudar de página, os slots são reaproveitados (sem recriar tudo)
+ *  - Dados da Pokédex carregados do arquivo pokedex.csv (local)
  */
 
 // ─────────────────────────────────────────
@@ -17,31 +18,112 @@ const TOTAL_PAGES    = TOTAL_CARDS / CARDS_PER_PAGE; // 100
 const CARDS_PER_SIDE = CARDS_PER_PAGE / 2;           // 9
 
 // ─────────────────────────────────────────
-// SUPABASE
+// POKÉDEX (carregada do CSV local)
 // ─────────────────────────────────────────
-const SUPABASE_URL = 'https://cjbnskeycuglwnwjzhrg.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqYm5za2V5Y3VnbHdud2p6aHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNTkyMTQsImV4cCI6MjA5NzYzNTIxNH0.shVis3xsKbGSY3BmuRep8pQS78yoQmL6dp6L8JinfaE';
+let POKEDEX = {};
 
-/**
- * Busca um Pokémon pelo número nacional na tabela pokedex.
- * Retorna { national_number, gen, english_name } ou null se não encontrado.
- */
-async function fetchPokemon(nationalNumber) {
-  const url = `${SUPABASE_URL}/rest/v1/pokedex`
-    + `?national_number=eq.${nationalNumber}`
-    + `&select=national_number,gen,english_name`
-    + `&limit=1`;
+async function loadPokedex() {
+  const res = await fetch('./pokedex.csv');
 
-  const res = await fetch(url, {
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
+  if (!res.ok) {
+    throw new Error(`Erro ao carregar pokedex.csv: ${res.status}`);
+  }
+
+  const buffer = await res.arrayBuffer();
+  const csvText = decodePokedexText(buffer);
+  POKEDEX = parsePokedexCsv(csvText);
+}
+
+function decodePokedexText(buffer) {
+  const bytes = new Uint8Array(buffer);
+
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+    return new TextDecoder('utf-16le').decode(buffer);
+  }
+
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+    return new TextDecoder('utf-16be').decode(buffer);
+  }
+
+  return new TextDecoder('utf-8').decode(buffer);
+}
+
+function parsePokedexCsv(csvText) {
+  const rows = parseDelimitedRows(csvText.trim());
+  const headers = rows.shift().map(header => header.replace(/^\uFEFF/, ''));
+
+  return rows.reduce((pokedex, values) => {
+    const row = headers.reduce((data, header, index) => {
+      data[header] = values[index] ?? '';
+      return data;
+    }, {});
+
+    const number = Number(row.national_number);
+    if (!number) return pokedex;
+
+    pokedex[String(number)] = {
+      number,
+      name: row.english_name,
+      gen: row.gen,
+      type1: row.primary_type,
+      type2: row.secondary_type || null,
+      classification: row.classification,
+      description: row.description,
+    };
+
+    return pokedex;
+  }, {});
+}
+
+function parseDelimitedRows(text) {
+  const firstLine = text.split(/\r?\n/, 1)[0];
+  const delimiter = firstLine.includes('\t') ? '\t' : ',';
+  const rows = [];
+  let row = [];
+  let value = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (char === '"' && insideQuotes && nextChar === '"') {
+      value += '"';
+      i++;
+      continue;
     }
-  });
 
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.length > 0 ? data[0] : null;
+    if (char === '"') {
+      insideQuotes = !insideQuotes;
+      continue;
+    }
+
+    if (char === delimiter && !insideQuotes) {
+      row.push(value);
+      value = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !insideQuotes) {
+      if (char === '\r' && nextChar === '\n') i++;
+      row.push(value);
+      rows.push(row);
+      row = [];
+      value = '';
+      continue;
+    }
+
+    value += char;
+  }
+
+  row.push(value);
+  rows.push(row);
+
+  return rows.filter(values => values.some(item => item !== ''));
+}
+
+function getPokemon(cardNum) {
+  return POKEDEX[String(cardNum)] ?? null;
 }
 
 // ─────────────────────────────────────────
@@ -87,28 +169,44 @@ function firstCardOfPage(page) {
 }
 
 function renderSide(grid, start) {
-  let slots = Array.from(grid.children);
-
-  while (slots.length < CARDS_PER_SIDE) {
-    const slot = document.createElement('div');
-    slot.className = 'card-slot';
-    grid.appendChild(slot);
-    slots.push(slot);
+  while (grid.children.length < CARDS_PER_SIDE) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'card-wrapper';
+    wrapper.innerHTML = `
+      <div class="card-slot"></div>
+      <div class="card-label"></div>
+    `;
+    grid.appendChild(wrapper);
   }
+
+  const wrappers = Array.from(grid.children);
 
   for (let i = 0; i < CARDS_PER_SIDE; i++) {
     const cardNum = start + i;
-    const slot    = slots[i];
+    const wrapper = wrappers[i];
+    const slot    = wrapper.querySelector('.card-slot');
+    const label   = wrapper.querySelector('.card-label');
     const icon    = SLOT_ICONS[i % SLOT_ICONS.length];
+    const pokemon = getPokemon(cardNum);
 
     slot.innerHTML = `
       <span class="card-number">#${String(cardNum).padStart(4, '0')}</span>
       <span class="card-icon" aria-hidden="true">${icon}</span>
-      <span class="card-badge">${cardNum}</span>
     `;
 
-    slot.onclick = null;
-    slot.onclick = () => openCardModal(cardNum);
+    if (pokemon) {
+      label.innerHTML = `
+        <span class="label-num">#${String(pokemon.number).padStart(4, '0')}</span>
+        <span class="label-name">${pokemon.name}</span>
+      `;
+      label.classList.remove('label-empty');
+    } else {
+      label.innerHTML = `<span class="label-unknown">???</span>`;
+      label.classList.add('label-empty');
+    }
+
+    wrapper.onclick = null;
+    wrapper.onclick = () => openCardModal(cardNum);
   }
 }
 
@@ -148,39 +246,31 @@ function closeModal(id) {
   document.getElementById(id).classList.remove('open');
 }
 
-async function openCardModal(cardNum) {
-  // Atualiza título
+function openCardModal(cardNum) {
+  const pokemon = getPokemon(cardNum);
+
   document.getElementById('card-modal-title').textContent =
     `CARTA  #${String(cardNum).padStart(4, '0')}`;
 
-  // Reseta o painel de info enquanto carrega
   const infoEl = document.getElementById('card-pokemon-info');
-  infoEl.innerHTML = `
-    <div class="poke-loading">
-      <span class="poke-loading-dot"></span>
-      <span class="poke-loading-dot"></span>
-      <span class="poke-loading-dot"></span>
-    </div>
-  `;
-
-  openModal('card-modal');
-
-  // Busca no Supabase
-  const pokemon = await fetchPokemon(cardNum);
 
   if (pokemon) {
     infoEl.innerHTML = `
       <div class="poke-info-row">
         <span class="poke-info-label">Nº</span>
-        <span class="poke-info-value poke-number">#${String(pokemon.national_number).padStart(4, '0')}</span>
+        <span class="poke-info-value poke-number">#${String(pokemon.number).padStart(4, '0')}</span>
       </div>
       <div class="poke-info-row">
         <span class="poke-info-label">NOME</span>
-        <span class="poke-info-value poke-name">${pokemon.english_name}</span>
+        <span class="poke-info-value poke-name">${pokemon.name}</span>
       </div>
       <div class="poke-info-row">
         <span class="poke-info-label">GEN</span>
         <span class="poke-info-value poke-gen">GEN ${pokemon.gen}</span>
+      </div>
+      <div class="poke-info-row">
+        <span class="poke-info-label">TIPO</span>
+        <span class="poke-info-value poke-type">${pokemon.type1}${pokemon.type2 ? ' / ' + pokemon.type2 : ''}</span>
       </div>
     `;
   } else {
@@ -191,9 +281,10 @@ async function openCardModal(cardNum) {
       </div>
     `;
   }
+
+  openModal('card-modal');
 }
 
-// Fechar modal clicando no fundo
 document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
   backdrop.addEventListener('click', e => {
     if (e.target === backdrop) backdrop.classList.remove('open');
@@ -282,8 +373,15 @@ function createStars() {
 // INIT
 // ─────────────────────────────────────────
 
-(function init() {
+(async function init() {
   createStars();
   document.getElementById('total-pages').textContent = TOTAL_PAGES;
+
+  try {
+    await loadPokedex();
+  } catch (error) {
+    console.error(error);
+  }
+
   renderPage(1);
 })();
