@@ -28,7 +28,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
  */
 async function fetchPokemon(nationalNumber) {
   const url = `${SUPABASE_URL}/rest/v1/pokedex`
-    + `?national_number=eq.${nationalNumber}`
+    + `?national_number=eq.${parseInt(nationalNumber, 10)}`
     + `&select=national_number,gen,english_name`
     + `&limit=1`;
 
